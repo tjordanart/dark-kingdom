@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dark Kingdom</title>
+<style>
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #0b0f0d;
+    min-height: 100%;
+    width: 100% !important;
+    text-align: center !important;
+  }
+  #dk-wrapper {
+    display: inline-block !important;
+    text-align: left !important;
+    font-family: "Courier New", Courier, monospace;
+    background: #0b0f0d;
+    color: #e6e6e6;
+    width: 720px !important;
+    max-width: 100% !important;
+    padding: 24px 20px 40px;
+    box-sizing: border-box;
+  }
+  #dk-screen {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: 15px;
+    line-height: 1.55;
+    min-height: 300px;
+  }
+  #dk-choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .dk-btn {
+    font-family: "Courier New", Courier, monospace;
+    background: transparent;
+    border: 1px solid #3fd6a3;
+    color: #3fd6a3;
+    padding: 10px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .dk-btn:hover {
+    background: #3fd6a3;
+    color: #0b0f0d;
+  }
+  .dk-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .dk-red { color: #ff5c5c; }
+  .dk-green { color: #3fd6a3; }
+  .dk-yellow { color: #f5d76e; }
+  .dk-cyan { color: #4fc3f7; }
+  .dk-cursor {
+    display: inline-block;
+    width: 8px;
+    height: 15px;
+    background: #3fd6a3;
+    animation: dk-blink 1s steps(1) infinite;
+    vertical-align: middle;
+    margin-left: 2px;
+  }
+  @keyframes dk-blink {
+    50% { opacity: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div id="dk-wrapper">
+  <div id="dk-screen"></div>
+  <div id="dk-choices"></div>
+</div>
+
+<script>
+(function () {
+
+  const screen = document.getElementById("dk-screen");
+  const choicesBox = document.getElementById("dk-choices");
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function randInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function choice(arr) {
+    return arr[randInt(0, arr.length - 1)];
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Scrolls the page (not the div) since Wix embeds an iframe whose
+  // document is the scrollable element, not any inner container.
+  function scrollToBottom() {
+    window.scrollTo(0, document.body.scrollHeight);
+  }
+
+  // Print a full line instantly, optionally colored.
+  function printLine(text, colorClass) {
+    const span = document.createElement("span");
+    if (colorClass) span.className = colorClass;
+    span.innerHTML = escapeHtml(text);
+    screen.appendChild(span);
+    screen.appendChild(document.createElement("br"));
+    scrollToBottom();
+  }
+
+  // Type text out character by character (mirrors type_text in the Python version).
+  async function typeText(text, speed) {
+    speed = speed === undefined ? 18 : speed;
+    const span = document.createElement("span");
+    screen.appendChild(span);
+
+    const cursor = document.createElement("span");
+    cursor.className = "dk-cursor";
+    screen.appendChild(cursor);
+
+    for (const ch of text) {
+      span.innerHTML += escapeHtml(ch);
+      scrollToBottom();
+      await sleep(speed);
+    }
+    cursor.remove();
+    screen.appendChild(document.createElement("br"));
+    scrollToBottom();
+  }
+
+  async function pause(ms) {
+    await sleep(ms === undefined ? 500 : ms);
+  }
+
+  // Shows buttons and resolves with the value of whichever the player clicks.
+  function waitForChoice(options) {
+    return new Promise((resolve) => {
+      choicesBox.innerHTML = "";
+      options.forEach((opt) => {
+        const btn = document.createElement("button");
+        btn.className = "dk-btn";
+        btn.textContent = opt.label;
+        btn.addEventListener("click", () => {
+          Array.from(choicesBox.children).forEach((b) => (b.disabled = true));
+          choicesBox.innerHTML = "";
+          resolve(opt.value);
+        });
+        choicesBox.appendChild(btn);
+      });
+      scrollToBottom();
+    });
+  }
+
+  // ---------- Core battle logic ----------
+
+  async function battleEnemy(stats, enemyName, enemyHealth, enemyAttack) {
+    let specialCooldown = 0;
+
+    printLine("");
+    printLine("A " + enemyName.toUpperCase() + " APPEARS!", "dk-red");
+    printLine(enemyName + " Health: " + enemyHealth, "dk-red");
+
+    while (stats.health > 0 && enemyHealth > 0) {
+
+      printLine("");
+      printLine("Your Health: " + stats.health, "dk-green");
+      printLine(enemyName + " Health: " + enemyHealth, "dk-red");
+      printLine("------------------------------", "dk-cyan");
+
+      if (specialCooldown === 0) {
+        printLine("Special Attack: READY", "dk-cyan");
+      } else {
+        printLine("Special Attack: " + specialCooldown + " turns", "dk-yellow");
+      }
+
+      const options = [
+        { label: "1. Attack", value: "1" },
+        { label: "2. Special Attack", value: "2" },
+        { label: "3. Use Potion", value: "3" },
+        { label: "4. Run", value: "4" },
+      ];
+      const battleChoice = await waitForChoice(options);
+
+      if (battleChoice === "1") {
+        let damage = randInt(stats.attack - 5, stats.attack + 5);
+        const criticalHit = randInt(1, 100) <= 15;
+
+        if (criticalHit) {
+          damage *= 2;
+          await typeText("You attack the " + enemyName + "!");
+          printLine("CRITICAL HIT!", "dk-red");
+          await typeText("You deal " + damage + " damage.");
+        } else {
+          await typeText("You attack the " + enemyName + "!");
+          await typeText("You deal " + damage + " damage.");
+        }
+
+        enemyHealth -= damage;
+
+        if (enemyHealth > 0) {
+          const enemyDamage = randInt(5, enemyAttack);
+          stats.health -= enemyDamage;
+
+          await typeText("The " + enemyName + " attacks!");
+          await typeText("You take " + enemyDamage + " damage.");
+
+          if (enemyName === "Werewolf" && randInt(1, 100) <= 25) {
+            const healAmount = 20;
+            enemyHealth += healAmount;
+            await typeText("The Werewolf howls and restores " + healAmount + " health!");
+          }
+        }
+
+      } else if (battleChoice === "2") {
+        if (specialCooldown === 0) {
+          let damage;
+          if (stats.character === "Warrior") damage = randInt(25, 40);
+          else if (stats.character === "Wizard") damage = randInt(30, 45);
+          else damage = randInt(20, 50);
+
+          enemyHealth -= damage;
+          specialCooldown = 3;
+
+          await typeText("You use " + stats.specialAttack + "!");
+          await typeText("You deal " + damage + " damage.");
+
+          if (enemyHealth > 0) {
+            const enemyDamage = randInt(5, enemyAttack);
+            stats.health -= enemyDamage;
+
+            await typeText("The " + enemyName + " attacks!");
+            await typeText("You take " + enemyDamage + " damage.");
+          }
+        } else {
+          await typeText("Your special attack is on cooldown.");
+        }
+
+      } else if (battleChoice === "3") {
+        if (stats.potions > 0) {
+          const heal = 30;
+          const oldHealth = stats.health;
+          stats.health = Math.min(stats.health + heal, stats.maxHealth);
+          const actualHeal = stats.health - oldHealth;
+          stats.potions -= 1;
+
+          await typeText("You drink a health potion.");
+          await typeText("You recover " + actualHeal + " health.");
+          await typeText("Potions remaining: " + stats.potions);
+        } else {
+          await typeText("You don't have any potions.");
+        }
+
+      } else if (battleChoice === "4") {
+        await typeText("You run away from the " + enemyName + ".");
+        return false;
+      }
+
+      if (specialCooldown > 0) specialCooldown -= 1;
+    }
+
+    if (enemyHealth <= 0) {
+      printLine("");
+      printLine("The " + enemyName + " has been defeated!", "dk-green");
+
+      stats.xp += 50;
+      stats.gold += 20;
+      await typeText("You gained 50 XP.");
+      await typeText("You found 20 gold.");
+      await pause();
+
+      if (stats.xp >= stats.xpNeeded) {
+        stats.level += 1;
+        stats.xp -= stats.xpNeeded;
+        stats.maxHealth += 20;
+        stats.health = stats.maxHealth;
+        stats.attack += 5;
+
+        await typeText("LEVEL UP!");
+        await typeText("You are now Level " + stats.level + "!");
+        await typeText("Health increased to " + stats.maxHealth + "!");
+        await typeText("Attack increased to " + stats.attack + "!");
+        await typeText("You are fully healed!");
+      }
+
+      printLine("XP: " + stats.xp);
+      printLine("Gold: " + stats.gold, "dk-yellow");
+      await pause();
+
+      return true;
+
+    } else if (stats.health <= 0) {
+      printLine("");
+      printLine("You have been defeated.", "dk-red");
+      await typeText("Your adventure ends here.");
+      return false;
+    }
+
+    return false;
+  }
+
+  async function runCastleRoomBattle(stats, roomName) {
+    let enemy, enemyHealth, enemyAttack, reward;
+
+    if (roomName === "Armory") {
+      await typeText("You enter the armory.");
+      await typeText("Rusty weapons line the walls.");
+      enemy = choice(["Skeleton", "Dark Soldier"]);
+      enemyHealth = choice([70, 90]);
+      enemyAttack = choice([14, 17]);
+      reward = 40;
+    } else {
+      await typeText("You descend into the dungeon.");
+      await typeText("Something moves in the darkness.");
+      enemy = choice(["Vampire", "Dark Mage"]);
+      enemyHealth = choice([85, 75]);
+      enemyAttack = choice([18, 20]);
+      reward = 60;
+    }
+
+    const defeated = await battleEnemy(stats, enemy, enemyHealth, enemyAttack);
+
+    if (defeated) {
+      await typeText("You find a chest containing " + reward + " gold!");
+      stats.gold += reward;
+    }
+
+    return defeated;
+  }
+
+  async function runCastleMerchant(stats) {
+    await pause();
+    await typeText("You leave the chamber and enter a dark hallway.");
+    await pause();
+    await typeText("A mysterious merchant waits in the shadows.");
+    await pause();
+
+    printLine("");
+    printLine("CASTLE MERCHANT", "dk-cyan");
+    await typeText("You may purchase weapons, potions, and upgrades.");
+
+    let weaponPurchased = false;
+    let potionsBought = 0;
+    let healthUpgradePurchased = false;
+    let attackUpgradePurchased = false;
+
+    while (true) {
+      printLine("");
+      printLine("Gold: " + stats.gold, "dk-yellow");
+
+      const shopChoice = await waitForChoice([
+        { label: "1. Buy Weapon", value: "1" },
+        { label: "2. Buy Potion (Max 3) - 20 gold", value: "2" },
+        { label: "3. Health Upgrade - 30 gold (+20 Max Health)", value: "3" },
+        { label: "4. Attack Upgrade - 30 gold (+5 Attack)", value: "4" },
+        { label: "5. Leave Shop", value: "5" },
+      ]);
+
+      if (shopChoice === "1") {
+        if (weaponPurchased) {
+          await typeText("You have already purchased a weapon.");
+        } else {
+          let opt1, opt2;
+          if (stats.character === "Warrior") {
+            opt1 = "Ironblade"; opt2 = "Great Sword";
+          } else if (stats.character === "Rogue") {
+            opt1 = "Shadow Dagger"; opt2 = "Ironfang";
+          } else {
+            opt1 = "Arcane Staff"; opt2 = "Enchanted Staff";
+          }
+
+          const weaponChoice = await waitForChoice([
+            { label: "1. " + opt1 + " - 20 gold (+5 Attack)", value: "1" },
+            { label: "2. " + opt2 + " - 40 gold (+10 Attack)", value: "2" },
+          ]);
+
+          if (weaponChoice === "1" && stats.gold >= 20) {
+            stats.gold -= 20;
+            stats.attack += 5;
+            weaponPurchased = true;
+            await typeText("You purchased the " + opt1 + "!");
+            await typeText("Attack increased by 5!");
+            printLine("Attack: " + stats.attack);
+          } else if (weaponChoice === "2" && stats.gold >= 40) {
+            stats.gold -= 40;
+            stats.attack += 10;
+            weaponPurchased = true;
+            await typeText("You purchased the " + opt2 + "!");
+            await typeText("Attack increased by 10!");
+            printLine("Attack: " + stats.attack);
+          } else {
+            await typeText("You don't have enough gold.");
+          }
+        }
+
+      } else if (shopChoice === "2") {
+        if (potionsBought >= 3) {
+          await typeText("You have reached the maximum of 3 potions.");
+        } else if (stats.gold >= 20) {
+          stats.gold -= 20;
+          stats.potions += 1;
+          potionsBought += 1;
+          await typeText("You purchased a health potion!");
+          printLine("Potions: " + stats.potions);
+        } else {
+          await typeText("You don't have enough gold.");
+        }
+
+      } else if (shopChoice === "3") {
+        if (healthUpgradePurchased) {
+          await typeText("You have already purchased the Health Upgrade.");
+        } else if (stats.gold >= 30) {
+          stats.gold -= 30;
+          stats.maxHealth += 20;
+          stats.health = stats.maxHealth;
+          healthUpgradePurchased = true;
+          await typeText("You purchased the Health Upgrade!");
+          await typeText("Maximum Health increased by 20!");
+          await typeText("You are fully healed!");
+          printLine("Max Health: " + stats.maxHealth);
+        } else {
+          await typeText("You don't have enough gold.");
+        }
+
+      } else if (shopChoice === "4") {
+        if (attackUpgradePurchased) {
+          await typeText("You have already purchased the Attack Upgrade.");
+        } else if (stats.gold >= 30) {
+          stats.gold -= 30;
+          stats.attack += 5;
+          attackUpgradePurchased = true;
+          await typeText("You purchased the Attack Upgrade!");
+          await typeText("Attack increased by 5!");
+          printLine("Attack: " + stats.attack);
+        } else {
+          await typeText("You don't have enough gold.");
+        }
+
+      } else if (shopChoice === "5") {
+        await typeText("You leave the merchant behind.");
+        printLine("Gold: " + stats.gold, "dk-yellow");
+        printLine("Attack: " + stats.attack);
+        printLine("Max Health: " + stats.maxHealth);
+        printLine("Potions: " + stats.potions);
+        await pause();
+        break;
+      }
+    }
+  }
+
+  async function runDarkKingBattle(stats) {
+    let darkKingHealth = 180;
+    const darkKingMaxHealth = 180;
+    const darkKingAttack = 25;
+    let darkKingCooldown = 0;
+
+    while (stats.health > 0 && darkKingHealth > 0) {
+      printLine("");
+      printLine("Your Health: " + stats.health, "dk-green");
+      printLine("Dark King Health: " + darkKingHealth, "dk-red");
+      printLine("------------------------------", "dk-cyan");
+
+      const bossChoice = await waitForChoice([
+        { label: "1. Attack", value: "1" },
+        { label: "2. Special Attack", value: "2" },
+        { label: "3. Use Potion", value: "3" },
+      ]);
+
+      if (bossChoice === "1") {
+        let damage = randInt(stats.attack - 5, stats.attack + 5);
+        const criticalHit = randInt(1, 100) <= 15;
+
+        if (criticalHit) {
+          damage *= 2;
+          await typeText("You attack the Dark King!");
+          printLine("CRITICAL HIT!", "dk-red");
+          await typeText("You deal " + damage + " damage.");
+        } else {
+          await typeText("You attack the Dark King!");
+          await typeText("You deal " + damage + " damage.");
+        }
+        darkKingHealth -= damage;
+
+      } else if (bossChoice === "2") {
+        if (darkKingCooldown === 0) {
+          let damage;
+          if (stats.character === "Warrior") damage = randInt(25, 40);
+          else if (stats.character === "Wizard") damage = randInt(30, 45);
+          else damage = randInt(20, 50);
+
+          darkKingHealth -= damage;
+          darkKingCooldown = 3;
+
+          await typeText("You use " + stats.specialAttack + "!");
+          await typeText("You deal " + damage + " damage.");
+        } else {
+          await typeText("Your special attack is on cooldown.");
+          continue;
+        }
+
+      } else if (bossChoice === "3") {
+        if (stats.potions > 0) {
+          const heal = 30;
+          const oldHealth = stats.health;
+          stats.health = Math.min(stats.health + heal, stats.maxHealth);
+          const actualHeal = stats.health - oldHealth;
+          stats.potions -= 1;
+
+          await typeText("You drink a health potion.");
+          await typeText("You recover " + actualHeal + " health.");
+          await typeText("Potions remaining: " + stats.potions);
+        } else {
+          await typeText("You don't have any potions.");
+          continue;
+        }
+      }
+
+      if (darkKingHealth <= 0) break;
+
+      const darkKingDamage = randInt(12, darkKingAttack);
+      stats.health -= darkKingDamage;
+
+      await typeText("The Dark King attacks!");
+      await typeText("You take " + darkKingDamage + " damage.");
+
+      if (darkKingHealth > 0 && randInt(1, 100) <= 25) {
+        const healAmount = 20;
+        darkKingHealth = Math.min(darkKingHealth + healAmount, darkKingMaxHealth);
+        await typeText("The Dark King raises his hand and restores 20 health!");
+      }
+
+      if (darkKingCooldown > 0) darkKingCooldown -= 1;
+    }
+
+    if (darkKingHealth <= 0) {
+      await pause();
+      printLine("");
+      printLine("THE DARK KING HAS BEEN DEFEATED!", "dk-green");
+      await pause();
+      await typeText("The Dark King's crown falls to the floor.");
+      await pause();
+      await typeText("The darkness surrounding the castle begins to fade.");
+      await pause();
+      await typeText("You have saved the kingdom.");
+      await pause();
+
+      printLine("");
+      printLine("================================", "dk-yellow");
+      printLine("        KINGDOM SAVED!", "dk-yellow");
+      printLine("        YOU ARE VICTORIOUS!", "dk-yellow");
+      printLine("================================", "dk-yellow");
+      await pause();
+
+      await typeText("Congratulations, " + stats.character + "!");
+      await typeText("You defeated the Dark King and completed your adventure!");
+
+      printLine("");
+      printLine("Final Level: " + stats.level);
+      printLine("Final Attack: " + stats.attack);
+      printLine("Final Gold: " + stats.gold, "dk-yellow");
+      printLine("Potions Remaining: " + stats.potions);
+
+    } else if (stats.health <= 0) {
+      printLine("");
+      printLine("The Dark King has defeated you.", "dk-red");
+      await typeText("The kingdom remains in darkness...");
+    }
+
+    // Play again
+    printLine("");
+    await waitForChoice([{ label: "Play Again", value: "restart" }]);
+    screen.innerHTML = "";
+    main();
+  }
+
+  async function chooseCharacter() {
+    await typeText("Choose your character:");
+    printLine("");
+
+    const choiceValue = await waitForChoice([
+      { label: "1. Warrior", value: "1" },
+      { label: "2. Wizard", value: "2" },
+      { label: "3. Rogue", value: "3" },
+    ]);
+
+    let character, health, maxHealth, attack, specialAttack;
+
+    if (choiceValue === "1") {
+      character = "Warrior"; health = 120; maxHealth = 120; attack = 20; specialAttack = "Power Strike";
+    } else if (choiceValue === "2") {
+      character = "Wizard"; health = 80; maxHealth = 80; attack = 30; specialAttack = "Fireball";
+    } else {
+      character = "Rogue"; health = 100; maxHealth = 100; attack = 25; specialAttack = "Backstab";
+    }
+
+    return {
+      character: character,
+      health: health,
+      maxHealth: maxHealth,
+      attack: attack,
+      specialAttack: specialAttack,
+      gold: 50,
+      level: 1,
+      xp: 0,
+      xpNeeded: 100,
+      potions: 2,
+    };
+  }
+
+  async function main() {
+    printLine("==============================", "dk-cyan");
+    printLine("         DARK KINGDOM", "dk-cyan");
+    printLine("==============================", "dk-cyan");
+    await pause();
+
+    const stats = await chooseCharacter();
+
+    await typeText("You chose the " + stats.character + ".");
+    await pause();
+
+    printLine("Health: " + stats.health, "dk-green");
+    printLine("Gold: " + stats.gold, "dk-yellow");
+    printLine("Level: " + stats.level);
+    printLine("Potions: " + stats.potions);
+    printLine("Special: " + stats.specialAttack, "dk-cyan");
+    await pause();
+
+    printLine("Your adventure begins...", "dk-cyan");
+    await pause();
+
+    await typeText("You arrive at a quiet village.");
+    await typeText("Something feels wrong.");
+    await pause();
+
+    await typeText("An old man approaches.");
+    await typeText('"The Dark King has taken the castle. Stay away from the forest."');
+    await pause();
+
+    const villageChoice = await waitForChoice([
+      { label: "1. Ask about the Dark King", value: "1" },
+      { label: "2. Head toward the forest", value: "2" },
+    ]);
+
+    if (villageChoice === "1") {
+      await typeText("The old man warns you that the castle is heavily guarded.");
+      await typeText("You thank him and head toward the forest.");
+    } else {
+      await typeText("You leave the village and head toward the forest.");
+    }
+
+    await pause();
+    printLine("You enter the Dark Forest...", "dk-cyan");
+    await pause();
+
+    await typeText("The trees block out the sunlight.");
+    await typeText("Something is watching you...");
+    await pause(750);
+
+    const goblinDefeated = await battleEnemy(stats, "Goblin", 50, 12);
+    if (!goblinDefeated) { await endGameRestart(); return; }
+
+    await typeText("You continue deeper into the forest...");
+    await pause();
+    await typeText("The sound of something large approaches.");
+    await pause();
+
+    const werewolfDefeated = await battleEnemy(stats, "Werewolf", 80, 16);
+    if (!werewolfDefeated) { await endGameRestart(); return; }
+
+    await typeText("The forest grows silent once again...");
+    await pause();
+    await typeText("A cold wind blows through the trees...");
+    await pause();
+    await typeText("You hear the sound of armor approaching.");
+    await pause();
+
+    const darkKnightDefeated = await battleEnemy(stats, "Dark Knight", 120, 20);
+    if (!darkKnightDefeated) { await endGameRestart(); return; }
+
+    await typeText("The Dark Knight falls to the ground.");
+    await pause();
+    await typeText("Ahead, the Dark King's castle rises above the trees.");
+    await pause();
+
+    printLine("THE CASTLE AWAITS...", "dk-cyan");
+    await pause();
+
+    await typeText("You enter the castle.");
+    await typeText("Two paths lie before you.");
+
+    const castleChoice = await waitForChoice([
+      { label: "1. The Armory", value: "1" },
+      { label: "2. The Dungeon", value: "2" },
+    ]);
+
+    const roomDefeated = await runCastleRoomBattle(stats, castleChoice === "2" ? "Dungeon" : "Armory");
+    if (!roomDefeated) { await endGameRestart(); return; }
+
+    await runCastleMerchant(stats);
+
+    await typeText("You continue deeper into the castle.");
+    await pause();
+    await typeText("Massive doors stand before you.");
+    await pause();
+    await typeText("You push them open.");
+    await pause();
+
+    printLine("THE THRONE ROOM", "dk-cyan");
+    await pause();
+
+    await typeText("A dark figure sits upon the throne.");
+    await pause();
+    await typeText('"So... you have made it this far."');
+    await pause();
+    await typeText('"I am the Dark King."');
+    await pause();
+
+    printLine("THE DARK KING APPEARS!", "dk-red");
+    await pause();
+
+    await runDarkKingBattle(stats);
+  }
+
+  async function endGameRestart() {
+    printLine("");
+    await waitForChoice([{ label: "Play Again", value: "restart" }]);
+    screen.innerHTML = "";
+    main();
+  }
+
+  main();
+
+})();
+</script>
+
+</body>
+</html>
